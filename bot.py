@@ -1,35 +1,53 @@
 import os
-import asyncio
-from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command
-from aiogram.types import Message
+import requests
+from time import sleep
 
-# 🔑 Токен берётся из переменной окружения Render
+# 🔑 Токен берём из переменной окружения Render
 API_TOKEN = os.getenv("API_TOKEN")
-
-bot = Bot(token=API_TOKEN)
-dp = Dispatcher()
+BASE_URL = f"https://api.telegram.org/bot{API_TOKEN}"
 
 # 🔢 Число, которое бот прибавляет к введённому пользователем
 ADD_NUMBER = 2933
 
-# Команда /start
-@dp.message(Command(commands=["start"]))
-async def send_welcome(message: Message):
-    await message.answer(
-        f"Привет! Отправь мне число, и я прибавлю к нему 2380-347 что составит {ADD_NUMBER} 🙂"
-    )
+# Для хранения последнего обработанного апдейта
+offset = 0
 
-# Обработка любых сообщений
-@dp.message()
-async def calculate(message: Message):
+def get_updates(offset):
+    url = f"{BASE_URL}/getUpdates?timeout=100&offset={offset}"
+    response = requests.get(url)
+    return response.json()
+
+def send_message(chat_id, text):
+    url = f"{BASE_URL}/sendMessage"
+    data = {"chat_id": chat_id, "text": text}
+    requests.post(url, data=data)
+
+print("Бот запущен. Ожидание сообщений...")
+
+while True:
     try:
-        num = float(message.text)
-        result = num + ADD_NUMBER
-        await message.answer(f"{num} + {ADD_NUMBER} = {result}")
-    except ValueError:
-        await message.answer("Отправь число, пожалуйста 🤓")
+        updates = get_updates(offset)
+        for update in updates.get("result", []):
+            offset = update["update_id"] + 1
+            message = update.get("message")
+            if message is None:
+                continue
 
-# Запуск бота
-if __name__ == "__main__":
-    asyncio.run(dp.start_polling(bot))
+            chat_id = message["chat"]["id"]
+            text = message.get("text", "")
+
+            # Обработка команды /start
+            if text == "/start":
+                send_message(chat_id, f"Привет! Отправь мне число, и я прибавлю к нему 3280-347 {ADD_NUMBER} 🙂")
+                continue
+
+            # Попытка преобразовать сообщение в число
+            try:
+                num = float(text)
+                result = num + ADD_NUMBER
+                send_message(chat_id, f"{num} + {ADD_NUMBER} = {result}")
+            except ValueError:
+                send_message(chat_id, "Отправь число, пожалуйста 🤓")
+    except Exception as e:
+        print(f"Ошибка: {e}")
+        sleep(1)
